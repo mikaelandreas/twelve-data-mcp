@@ -1,63 +1,13 @@
-# server.py — MCP over HTTP/SSE for Twelve Data OHLC (stable mapping)
-import os, httpx
-from mcp.server.fastmcp import FastMCP
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse, PlainTextResponse
+# ---- Health check for Render ----
+from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
+from starlette.applications import Starlette
 
-API = "https://api.twelvedata.com/time_series"
-KEY = os.environ.get("TWELVE_API_KEY")
+async def health(_req):
+    return PlainTextResponse("ok")
 
-mcp = FastMCP("twelve-data-ohlc")
-
-def agg_2m(bars):
-    out = []
-    for i in range(0, len(bars), 2):
-        if i + 1 >= len(bars): break
-        a, b = bars[i], bars[i+1]
-        out.append({
-            "t": a["t"], "o": a["o"],
-            "h": max(a["h"], b["h"]),
-            "l": min(a["l"], b["l"]),
-            "c": b["c"], "v": (a.get("v",0) + b.get("v",0))
-        })
-    return out
-
-@mcp.tool()
-async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
-    """Return [{t,o,h,l,c,v}] UTC, oldest→newest. Use '2m' to aggregate from 1min."""
-    if not KEY:
-        raise RuntimeError("TWELVE_API_KEY is not set")
-    wants_2m = (interval == "2m")
-    td_int = "1min" if wants_2m else interval
-    outsize = min(200, limit*2) if wants_2m else min(100, limit)
-
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(API, params={
-            "symbol": symbol, "interval": td_int,
-            "outputsize": outsize, "apikey": KEY
-        })
-        j = r.json()
-    if j.get("status") == "error":
-        raise RuntimeError(j.get("message", "Twelve Data error"))
-
-    bars = [{
-        "t": d["datetime"],
-        "o": float(d["open"]), "h": float(d["high"]),
-        "l": float(d["low"]),  "c": float(d["close"]),
-        "v": float(d.get("volume", 0))
-    } for d in (j.get("values") or [])][::-1]  # oldest->newest
-
-    if wants_2m:
-        bars = agg_2m(bars)
-    return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
-
-# ---- Health + info for humans/Render (200 OK). MCP lives at /sse/ only.
-async def health(_req): return PlainTextResponse("ok")
-async def info(_req):   return JSONResponse({"service": "twelve-data-ohlc", "status": "up"})
-
+# IMPORTANT: Mount MCP SSE at /sse/
 app = Starlette(routes=[
-    Route("/", info),                   # GET /  -> 200 JSON (so your browser doesn't see 404)
-    Route("/health", health),           # GET /health -> 200 "ok" (Render health check)
-    Mount("/sse/", app=mcp.sse_app()),  # *** MCP transport (GET stream + POST messages) ***
+    Route("/health", health),
+    Mount("/sse/", app=mcp.sse_app()),  # <-- this is the only MCP endpoint
 ])
