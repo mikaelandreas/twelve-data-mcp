@@ -8,7 +8,7 @@ from starlette.routing import Mount, Route
 API = "https://api.twelvedata.com/time_series"
 KEY = os.environ.get("TWELVE_API_KEY")
 
-mcp = FastMCP("twelve-data-ohlc", version="0.1.0")
+mcp = FastMCP("twelve-data-ohlc")
 
 def agg_2m(bars):
     out = []
