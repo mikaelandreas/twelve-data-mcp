@@ -57,11 +57,9 @@ from starlette.routing import Mount, Route
 async def health(_req):
     return PlainTextResponse("ok")
 
-sse_app = mcp.sse_app()  # MCP transport (GET stream + POST messages on same path)
+sse_app = mcp.sse_app()  # provides an internal `/sse` endpoint
 
-# order matters: health first so it isn't swallowed by root mount
 app = Starlette(routes=[
-    Route("/health", health),
-    Mount("/sse/", app=sse_app),  # MCP here
-    Mount("/",      app=sse_app), # and MCP at root too
+    Route("/health", health),   # human/Render check (200 OK)
+    Mount("/", sse_app),        # mount at root; reach the MCP transport at /sse  (no extra prefix!)
 ])
