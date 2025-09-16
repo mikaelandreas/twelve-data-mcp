@@ -71,9 +71,8 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
 async def health(_req): return PlainTextResponse("ok")
 async def info(_req):   return JSONResponse({"service":"twelve-data-ohlc","status":"up"})
 
-# Expose FastMCP's SSE app at /sse and add health routes
+from starlette.routing import Mount, Route
 app = Starlette(routes=[
-    Mount("/sse", app=mcp.sse_app()),
-    Route("/", info),
+    Mount("/", app=mcp.sse_app()),   # <— serve the MCP SSE endpoint at the exact root URL
     Route("/health", health),
 ])
