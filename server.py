@@ -1,6 +1,9 @@
-# server.py — minimal MCP over HTTP/SSE for Twelve Data OHLC
+# server.py — MCP over HTTP/SSE for Twelve Data OHLC (with proper health routes)
 import os, httpx
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.routing import Mount, Route
 
 API = "https://api.twelvedata.com/time_series"
 KEY = os.environ.get("TWELVE_API_KEY")
@@ -16,7 +19,7 @@ def agg_2m(bars):
             "t": a["t"], "o": a["o"],
             "h": max(a["h"], b["h"]),
             "l": min(a["l"], b["l"]),
-            "c": b["c"], "v": a.get("v",0) + b.get("v",0)
+            "c": b["c"], "v": (a.get("v",0) + b.get("v",0))
         })
     return out
 
@@ -49,5 +52,13 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
         bars = agg_2m(bars)
     return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
 
-# IMPORTANT: expose the MCP SSE endpoint as the ASGI app at the ROOT path
-app = mcp.sse_app()
+# --- Health + info routes that return 200 (so Render doesn't restart us)
+async def health(_req): return PlainTextResponse("ok")
+async def info(_req):   return JSONResponse({"service": "twelve-data-ohlc", "status": "up"})
+
+# Mount the MCP SSE endpoint at /sse and keep normal routes at / and /health
+app = Starlette(routes=[
+    Route("/", info),
+    Route("/health", health),
+    Mount("/sse", app=mcp.sse_app()),
+])
