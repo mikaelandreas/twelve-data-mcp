@@ -1,4 +1,4 @@
-# server.py — MCP over HTTP/SSE for Twelve Data OHLC (with proper health routes)
+# server.py — MCP over HTTP/SSE for Twelve Data OHLC (stable mapping)
 import os, httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -52,12 +52,12 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
         bars = agg_2m(bars)
     return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
 
-# --- Health + info routes that return 200 (so Render doesn't restart us)
-# --- Health + info routes ---
+# ---- Health + info for humans/Render (200 OK). MCP lives at /sse/ only.
 async def health(_req): return PlainTextResponse("ok")
 async def info(_req):   return JSONResponse({"service": "twelve-data-ohlc", "status": "up"})
 
 app = Starlette(routes=[
-    Route("/health", health),
-    Mount("/", app=mcp.sse_app()),
+    Route("/", info),                   # GET /  -> 200 JSON (so your browser doesn't see 404)
+    Route("/health", health),           # GET /health -> 200 "ok" (Render health check)
+    Mount("/sse/", app=mcp.sse_app()),  # *** MCP transport (GET stream + POST messages) ***
 ])
