@@ -49,7 +49,7 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
         bars = agg_2m(bars)
     return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
 
-# ---- ASGI app: serve MCP at BOTH "/" and "/sse/" + a proper health route
+# ---- ASGI app wiring (serve MCP at BOTH "/" and "/sse/" + a health route)
 from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
@@ -57,12 +57,11 @@ from starlette.routing import Mount, Route
 async def health(_req):
     return PlainTextResponse("ok")
 
-# one MCP ASGI app instance
-sse_app = mcp.sse_app()
+sse_app = mcp.sse_app()  # MCP transport (GET stream + POST messages on same path)
 
-# IMPORTANT: mount in this order: health first, then /sse/, then /
+# order matters: health first so it isn't swallowed by root mount
 app = Starlette(routes=[
-    Route("/health", health),     # 200 OK for Render checks
-    Mount("/sse/", app=sse_app),  # MCP transport here (GET stream + POST messages)
-    Mount("/",      app=sse_app), # and also at root (in case connector points to "/")
+    Route("/health", health),
+    Mount("/sse/", app=sse_app),  # MCP here
+    Mount("/",      app=sse_app), # and MCP at root too
 ])
