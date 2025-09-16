@@ -53,12 +53,13 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
     return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
 
 # --- Health + info routes that return 200 (so Render doesn't restart us)
+# --- Health + info routes ---
 async def health(_req): return PlainTextResponse("ok")
 async def info(_req):   return JSONResponse({"service": "twelve-data-ohlc", "status": "up"})
 
-# Mount the MCP SSE endpoint at /sse and keep normal routes at / and /health
+# Mount MCP SSE at /sse/  (note the trailing slash)
 app = Starlette(routes=[
     Route("/", info),
     Route("/health", health),
-    Mount("/sse", app=mcp.sse_app()),
+    Mount("/sse/", app=mcp.sse_app()),   # <— important
 ])
