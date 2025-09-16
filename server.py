@@ -1,13 +1,10 @@
-# server.py — MCP over HTTP/SSE for Twelve Data OHLC (stable mapping)
+# server.py — solid MCP over HTTP/SSE for Twelve Data OHLC
 import os, httpx
 from mcp.server.fastmcp import FastMCP
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse, PlainTextResponse
-from starlette.routing import Mount, Route
 
+# ---- MCP tool ----
 API = "https://api.twelvedata.com/time_series"
 KEY = os.environ.get("TWELVE_API_KEY")
-
 mcp = FastMCP("twelve-data-ohlc")
 
 def agg_2m(bars):
@@ -52,11 +49,20 @@ async def get_ohlc(symbol: str, interval: str, limit: int = 100) -> dict:
         bars = agg_2m(bars)
     return {"symbol": symbol, "interval": ("2m" if wants_2m else interval), "data": bars[-limit:]}
 
+# ---- ASGI app: serve MCP at BOTH "/" and "/sse/" + a proper health route
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Mount, Route
+
 async def health(_req):
     return PlainTextResponse("ok")
 
-# IMPORTANT: Mount MCP SSE at /sse/
+# one MCP ASGI app instance
+sse_app = mcp.sse_app()
+
+# IMPORTANT: mount in this order: health first, then /sse/, then /
 app = Starlette(routes=[
-    Route("/health", health),
-    Mount("/sse/", app=mcp.sse_app()),  # <-- this is the only MCP endpoint
+    Route("/health", health),     # 200 OK for Render checks
+    Mount("/sse/", app=sse_app),  # MCP transport here (GET stream + POST messages)
+    Mount("/",      app=sse_app), # and also at root (in case connector points to "/")
 ])
